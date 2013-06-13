@@ -1,0 +1,47 @@
+#
+#   Makefile for eXtended Sector Remapper (FSR) driver on kernel 2.6
+#
+#   Copyright(C) 2004-2006, Samsung Electronics, Co., Ltd.
+#
+
+# FSR base module
+obj-$(CONFIG_TINY_FSR)			+= tfsr.o
+
+# Should keep the build sequence. (fsr_base -> bml_block)
+tfsr-objs	:= tfsr_base.o tfsr_block.o tfsr_blkdev.o
+
+# This objects came from FSR, It will be never modified.
+tfsr-objs	+= Core/BML/FSR_BML_ROInterface.o 
+tfsr-objs	+= Core/BML/FSR_BML_BIFCommon.o 
+
+tfsr-objs	+= Core/BML/FSR_BML_BBMCommon.o Core/BML/FSR_BML_BBMMount.o 
+
+tfsr-objs	+= OAM/Linux/FSR_OAM_Linux.o
+
+tfsr-objs	+= Misc/FSR_Version.o Misc/FSR_DBG_Zone.o 
+
+#
+# Define FSR chip dependent LLD objects here
+#
+#Firenze
+tfsr-$(CONFIG_ARCH_SDP1004)       += LLD/PND_SDP1004/FSR_LLD_PureNAND.o
+#Genoa-P
+tfsr-$(CONFIG_ARCH_SDP1002)    += LLD/FlexOND/FSR_LLD_FlexOND.o
+tfsr-$(CONFIG_ARCH_SDP1002)       += LLD/OND/FSR_LLD_SWEcc.o LLD/OND/FSR_LLD_OneNAND.o
+tfsr-$(CONFIG_ARCH_SDP1002)       += LLD/OND/FSR_LLD_4K_OneNAND.o
+
+tfsr-$(CONFIG_NVT_NT72558)       += LLD/PND_NT558/FSR_LLD_PureNAND.o
+
+#
+# Define platform dependent objects(PAM) here
+#
+# Genoa-P
+tfsr-$(CONFIG_ARCH_SDP1002) += PAM/sdp/pam_sdp.o
+tfsr-$(CONFIG_ARCH_SDP1002) += PAM/sdp/memcpy_sdp.o
+# Firenze
+tfsr-$(CONFIG_ARCH_SDP1004) += PAM/sdp/pam_sdp1004.o
+
+
+tfsr-$(CONFIG_NVT_NT72558)   += PAM/NT558/FSR_PAM_NT558.o
+tfsr-$(CONFIG_NVT_NT72558)   += PAM/NT558/FSR_PAM_Memcpy.o
+tfsr-$(CONFIG_NVT_NT72558)   += PAM/NT558/FSR_PAM_PND.o
