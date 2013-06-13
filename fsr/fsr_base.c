@@ -25,6 +25,9 @@
 #include <linux/errno.h>
 #include <linux/proc_fs.h>
 #include "fsr_base.h"
+#if defined(FSR_MSM7200)
+#include "FSR_LLD_4K_OneNAND.h"
+#endif
 
 extern  VOID    memcpy32 (VOID       *pDst,
                           VOID       *pSrc,
@@ -43,6 +46,15 @@ EXPORT_SYMBOL(fsr_proc_dir);
 extern struct FlexONDShMem *gpstFNDShMem;
 extern struct OneNANDShMem *gpstONDShMem;
 extern struct OneNAND4kShMem *gpstOND4kShMem;
+#if defined(FSR_MSM7200)
+// [BML functions for DGS
+extern INT32   (*bml_open)(UINT32        nVol, UINT32        nFlag);
+extern VOID    (*bml_acquireSM)(UINT32        nVol);
+extern INT32   (*ond_4k_read)(UINT32 nDev, UINT32 nPbn, UINT32 nPgOffset, UINT8 *pMBuf, FSRSpareBuf *pSBuf, UINT32 nFlag);
+extern VOID    (*bml_release)(UINT32        nVol);
+// ]
+#endif
+
 
 #ifndef CONFIG_TINY_FSR
 	int (*sec_stl_delete)(dev_t dev, u32 start, u32 nums, u32 b_size) = NULL;
@@ -318,8 +330,10 @@ static int fsr_proc_output(char *buf)
 	{
 		vs = fsr_get_vol_spec(i);
 		/*no more device*/
+#if !defined(FSR_MSM7200) /* deleted by sj2202.park for recovery's bmlutils */
 		if (vs->nPgsPerSLCUnit == 0)
 		        continue;
+#endif
 		pi = fsr_get_part_spec(i);
 		
 		for (j = 0; j < fsr_parts_nr(pi); j++) 
@@ -440,6 +454,15 @@ static int __init fsr_init(void)
 		ERRPRINTK("BML: bml_block_init error (ret:%x)\n", error);
 		return -ENXIO;
 	}
+#if defined(FSR_MSM7200)
+	// [ initialize extern function points for DGS
+	printk("[%s] BML functions for DGS are initialized\n", __func__);
+	bml_open = FSR_BML_Open;
+	bml_acquireSM = FSR_BML_AcquireSM;
+	ond_4k_read = FSR_OND_4K_Read;
+	bml_release = FSR_BML_ReleaseSM;
+	// ]
+#endif
 	
 	return 0;
 }
@@ -500,6 +523,14 @@ EXPORT_SYMBOL(FSR_BML_GetVPgOffOfLSBPg);
 EXPORT_SYMBOL(FSR_BML_GetPartAttrChg);
 EXPORT_SYMBOL(FSR_BML_SetPartAttrChg);
 
+#if defined(FSR_MSM7200)
+/* Added by SEC_TN */
+EXPORT_SYMBOL(FSR_BML_GetFullPartI);
+EXPORT_SYMBOL(FSR_BML_AcquireSM);
+EXPORT_SYMBOL(FSR_BML_ReleaseSM);
+EXPORT_SYMBOL(FSR_PAM_GetPAParm);
+EXPORT_SYMBOL(FSR_OND_4K_Read);
+#endif
 /* STL */
 EXPORT_SYMBOL(fsr_register_stl_ioctl);
 EXPORT_SYMBOL(fsr_unregister_stl_ioctl);

@@ -211,6 +211,31 @@
     #define     OND_4K_MEMSET_DATARAM(pDst, nVal, nSize)                       \
                     FSR_FOE_MemsetDataRAM((pDst), (nVal), (nSize))
 
+#elif defined(FSR_MSM7200)
+    /* onenand controller does word access, but MSM7200 controller does 4byte access */
+
+    #define     OND_4K_WRITE(nAddr, nDQ)   FSR_PAM_WriteToOneNANDRegister((UINT32)&nAddr, nDQ)
+    #define     OND_4K_READ(nAddr)         FSR_PAM_ReadOneNANDRegister((UINT32)&nAddr)
+    #define     OND_4K_SET(nAddr, nDQ)                                           \
+               {                                                                             \
+                                           UINT32 nData;                                                             \
+                                           nData = OND_4K_READ(nAddr);                                              \
+                                           OND_4K_WRITE(nAddr, (nData | nDQ));                                      \
+                                       }
+    #define     OND_4K_CLR(nAddr, nDQ)                                           \
+               {                                                                             \
+                                           UINT32 nData;                                                             \
+                                           nData = OND_4K_READ(nAddr);                                              \
+                                           OND_4K_WRITE(nAddr, (nData & nDQ));                                      \
+                                       }
+
+    /* nSize is the number of bytes to transfer                                  */
+    #define     TRANSFER_TO_NAND(pDst, pSrc, nSize)                               \
+                               FSR_PAM_TransToNAND(pDst, pSrc, nSize)
+
+    #define     TRANSFER_FROM_NAND(pDst, pSrc, nSize)                             \
+                               FSR_PAM_TransFromNAND(pDst, pSrc, nSize)
+
 #else /* #if defined (FSR_ONENAND_EMULATOR)                                   */
 
     #define     OND_4K_WRITE(nAddr, nDQ)   {nAddr  = nDQ;}
@@ -870,6 +895,10 @@ FSR_OND_4K_Init(UINT32 nFlag)
         gpfReadOptimal = NULL;
 
         nInitFlg = TRUE32;
+#if defined(FSR_MSM7200)
+        FSR_PAM_InitNANDController();
+#endif
+
     } while (0);
 
     FSR_DBZ_DBGMOUT(FSR_DBZ_LLD_IF | FSR_DBZ_LLD_LOG,
@@ -1773,6 +1802,8 @@ _ReadOptWithSLoad(UINT32       nDev,
                  */
                 *(UINT16 *) &(pstOND4kCxt->pTempBuffer[0]) = OND_4K_READ(*(UINT16 *) &pstFOReg->nDataSB13[0xC]);
                 *(UINT16 *) &(pstOND4kCxt->pTempBuffer[2]) = OND_4K_READ(*(UINT16 *) &pstFOReg->nDataSB13[0xE]);
+#elif defined(FSR_MSM7200)
+                *(UINT32 *) &(pstOND4kCxt->pTempBuffer[0]) = OND_4K_READ(*(UINT16 *) &pstFOReg->nDataSB13[0xC]);
 #else
                 *(UINT32 *) &(pstOND4kCxt->pTempBuffer[0]) = *(UINT32 *) &pstFOReg->nDataSB13[0x0C];
 #endif

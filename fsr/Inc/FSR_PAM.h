@@ -38,7 +38,12 @@
 /* Definitions of PAM                                                        */
 /*****************************************************************************/
 
+#if defined(FSR_MSM7200)
+// Set to sync burst mode
+#define     FlexOneNAND_SYSCONFIG_VAL  (0xC0E2)
+#else
 #define     FlexOneNAND_SYSCONFIG_VAL  (0xC0F0)
+#endif
 #define     ASYNC_READ_MASK    ((FlexOneNAND_SYSCONFIG_VAL & 0x8000) ? 0 : 0x10)
 #define     ASYNC_WRITE_MASK   ((FlexOneNAND_SYSCONFIG_VAL & 0x2)    ? 0 : 0x30)
 

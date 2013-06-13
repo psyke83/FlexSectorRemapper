@@ -210,7 +210,11 @@ static inline unsigned int fsr_vol_unitsize(u32 volume, u32 partno)
 	
 	if (fsr_is_whole_dev(partno))
 	{
+#if defined(FSR_MSM7200)
+		return (vs->nSctsPerPg * vs->nPgsPerSLCUnit * 2)
+#else
 		return (vs->nSctsPerPg * vs->nPgsPerSLCUnit )//* 2)
+#endif
 			<< SECTOR_BITS;
 
 	}

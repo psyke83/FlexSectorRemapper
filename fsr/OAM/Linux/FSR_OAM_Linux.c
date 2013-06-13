@@ -32,6 +32,10 @@
 
 /* FSR include file */
 #include    "FSR.h"
+#ifdef FSR_MSM7200
+#include    "FSR_SpinLock.h"
+#include    "../../PAM/MSM7k/targtsncjnlya.h"
+#endif
 
 /*****************************************************************************/
 /* Global variables definitions                                              */
@@ -42,6 +46,24 @@
 /*****************************************************************************/
 #ifndef CONFIG_ARM
     #define SZ_128K                         0x00020000
+#endif
+
+#ifdef FSR_MSM7200
+#define     FSR_USE_DUAL_CORE
+
+#define FSR_SMEM_SPINLOCK_BASEADDR_VIRT (gnShMemBaseAddress[0] + 0x4FF0)
+#define SPIN_LOCK()         smem_flash_spin_lock(FSR_SMEM_SPINLOCK_BML, FSR_SMEM_SPINLOCK_BASEADDR_VIRT)
+#define SPIN_UNLOCK()       smem_flash_spin_unlock(FSR_SMEM_SPINLOCK_BML, FSR_SMEM_SPINLOCK_BASEADDR_VIRT)
+
+#define ACQUIRE_SM()        SPIN_LOCK()
+#define RELEASE_SM()        SPIN_UNLOCK()
+
+#define CREATE_SM(x)            \
+	do {                            \
+		*x = 1;         \
+	} while (0)
+
+#define DESTORY_SM()
 #endif
 
 /*****************************************************************************/
@@ -55,6 +77,7 @@
 /*****************************************************************************/
 /* Static variables definitions                                              */
 /*****************************************************************************/
+#ifndef FSR_MSM7200
 #if defined(WITH_TINY_FSR)
 
 extern  struct  semaphore fsr_sem[FSR_OAM_MAX_SEMAPHORES];
@@ -74,6 +97,7 @@ EXPORT_SYMBOL(semaphore_use_bml);
 EXPORT_SYMBOL(semaphore_fsr_bml_handle);
 
 #endif
+#endif /* FSR_MSM7200 */
 
 PRIVATE UINT32  gnFSRHeapUsage    = 0;
 PRIVATE UINT32  gnFSRNumOfMemReqs = 0;
@@ -86,6 +110,7 @@ static struct timeval stop;
 PRIVATE     UINT32          gnShMemBaseAddress[FSR_MAX_VOLS]    = {0x01FFA000,0};
 PRIVATE     UINT32          gnShMemMaxSize[FSR_MAX_VOLS]        = {0x5000,0};
 PRIVATE     UINT32          gnSMallocPtr[FSR_MAX_VOLS]          = {0,0};
+PRIVATE     UINT32          gnShMemResetPtr[FSR_MAX_HEAP_MEM_CHUNKS]    = {0,0};
 
 #define SHARED_MEMORY_RESET     (0x2)
 #endif
@@ -157,12 +182,31 @@ static inline void
 PUBLIC INT32
 FSR_OAM_Init(VOID)
 {
+#if defined(FSR_MSM7200) && defined(FSR_USE_DUAL_CORE)
+    INT32       nPAMRe = FSR_PAM_SUCCESS;
+    FsrVolParm  stPAM[FSR_MAX_VOLS];
+#endif
+
     FSR_STACK_VAR;
 
     FSR_STACK_END;
 
-    FSR_DBG_UnsetAllDbgZoneMask();
+    //FSR_DBG_UnsetAllDbgZoneMask();
     FSR_OAM_InitMemStat();
+
+#if defined(FSR_MSM7200) && defined(FSR_USE_DUAL_CORE)
+    nPAMRe  = FSR_PAM_GetPAParm(stPAM);
+    if (nPAMRe != FSR_PAM_SUCCESS)
+    {
+        return FSR_OAM_CRITICAL_ERROR;
+    }
+
+    gnShMemBaseAddress[0]   = stPAM[0].nSharedMemoryBase;
+    gnShMemBaseAddress[1]   = stPAM[1].nSharedMemoryBase;
+
+    gnShMemMaxSize[0]       = stPAM[0].nSharedMemorySize;
+    gnShMemMaxSize[1]       = stPAM[1].nSharedMemorySize;
+#endif
 
     return FSR_OAM_SUCCESS;
 }
@@ -253,6 +297,21 @@ FSR_OAM_ResetMalloc(UINT32  nMemChunkID,
     FSR_STACK_VAR;
 
     FSR_STACK_END;
+
+#if defined(FSR_MSM7200) && defined(FSR_USE_DUAL_CORE)
+    /* <Caution>
+     * This API resets only the shared memory pointer
+     */
+    if (bReset == TRUE32)
+    {
+        gnSMallocPtr[nMemChunkID]   = 0;
+    }
+    else /* bReset == FALSE32 */
+    {
+	gnSMallocPtr[nMemChunkID]   = gnShMemResetPtr[nMemChunkID];
+    }
+#endif
+
 }
 
 /**
@@ -350,6 +409,24 @@ FSR_OAM_MallocExt(UINT32    nPDev,
  * @version         1.0.0
  *
  */
+#ifdef FSR_MSM7200
+PUBLIC VOID
+FSR_OAM_FreeExt(UINT32      nMemChunkID,
+                VOID       *pMem,
+                UINT32      nMemType)
+{
+#if defined(FSR_USE_DUAL_CORE)
+    if (nMemType == FSR_OAM_LOCAL_MEM)
+    {
+        FSR_OAM_Free(pMem);
+    }
+    else
+    {
+        FSR_OAM_ResetMalloc(nMemChunkID, FALSE32);
+    }
+#endif
+}
+#else
 PUBLIC VOID
 FSR_OAM_FreeExt(UINT32      nPDev,
                 VOID       *pMem,
@@ -370,6 +447,7 @@ FSR_OAM_FreeExt(UINT32      nPDev,
 #endif
     }
 }
+#endif
 
 /**
  * @brief           This function frees memory
@@ -417,11 +495,16 @@ FSR_OAM_CreateSM(SM32   *pHandle,
                  UINT32  nLayer)
 {
     BOOL32      bRe = TRUE32;
+#ifndef FSR_MSM7200
     int         sem_count = 0;
+#endif
     FSR_STACK_VAR;
 
     FSR_STACK_END;
 
+#ifdef FSR_MSM7200
+    CREATE_SM(pHandle);
+#else
 
     do
     {
@@ -462,6 +545,7 @@ FSR_OAM_CreateSM(SM32   *pHandle,
         sema_init(&fsr_sem[sem_count], 1);
 
     } while (0);       
+#endif /* FSR_MSM7200 */
 
     return bRe;
 }
@@ -491,6 +575,10 @@ FSR_OAM_DestroySM(SM32        nHandle,
 
     FSR_STACK_END;
 
+#ifdef FSR_MSM7200
+    DESTORY_SM();
+#else
+
     if (semaphore_use[nHandle] != 1)
     {
         return FALSE32;
@@ -506,6 +594,7 @@ FSR_OAM_DestroySM(SM32        nHandle,
     }
 
     semaphore_use[nHandle] = 0;
+#endif /* FSR_MSM7200 */
 
     return TRUE32;
 }
@@ -534,7 +623,10 @@ FSR_OAM_AcquireSM(SM32        nHandle,
     FSR_STACK_VAR;
 
     FSR_STACK_END;
-
+#ifdef FSR_MSM7200
+    if (nLayer != FSR_OAM_SM_TYPE_STL)
+        ACQUIRE_SM();
+#else
     if (semaphore_use[nHandle] != 1)
     {
         return FALSE32;
@@ -542,6 +634,7 @@ FSR_OAM_AcquireSM(SM32        nHandle,
 
     /* acquire the lock for critical section */
     down(&fsr_sem[nHandle]);
+#endif /* FSR_MSM7200 */
 
     return TRUE32;
 }
@@ -570,13 +663,17 @@ FSR_OAM_ReleaseSM(SM32        nHandle,
     FSR_STACK_VAR;
 
     FSR_STACK_END;
-
+#ifdef FSR_MSM7200
+    if (nLayer != FSR_OAM_SM_TYPE_STL)
+        RELEASE_SM();
+#else
     if (semaphore_use[nHandle] != 1)
     {
         return FALSE32;
     }
    
     up(&fsr_sem[nHandle]);
+#endif /* FSR_MSM7200 */
 
     return TRUE32;
 }
