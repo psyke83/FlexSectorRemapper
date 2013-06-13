@@ -1,0 +1,10 @@
+# We're deliberately keeping these .o files, as we don't possess the source
+!FSR_BML_BadBlkMgr.o
+!FSR_BML_BBMCommon.o
+!FSR_BML_BBMMount.o
+!FSR_BML_BIFCommon.o
+!FSR_BML_Dump.o
+!FSR_BML_NonBlkMgr.o
+!FSR_BML_ROInterface.o
+!FSR_BML_RWInterface.o
+
