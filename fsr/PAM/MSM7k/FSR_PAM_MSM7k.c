@@ -54,9 +54,9 @@
 
 /**< if FSR_ENABLE_ONENAND_LFT is defined,
      Low level function table is linked with OneNAND LLD */
-#define      FSR_ENABLE_ONENAND_LFT
+#undef FSR_ENABLE_ONENAND_LFT
 
-#undef     FSR_ENABLE_4K_ONENAND_LFT
+#define    FSR_ENABLE_4K_ONENAND_LFT
 
 
 /**< MSM7200 NAND controller base address */
