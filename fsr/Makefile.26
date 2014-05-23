@@ -18,10 +18,24 @@ fsr-objs	+= Core/BML/FSR_BML_BBMCommon.o Core/BML/FSR_BML_BBMMount.o Core/BML/FS
 fsr-objs	+= Core/BML/FSR_BML_ROInterface.o 
 
 fsr-objs	+= OAM/Linux/FSR_OAM_Linux.o OAM/Linux/FSR_SpinLock.o
-#fsr-objs	+= LLD/FlexOND/FSR_LLD_FNDShared.o LLD/FlexOND/FSR_LLD_FlexOND.o 
-#fsr-objs       += LLD/OND/FSR_LLD_SWEcc.o LLD/OND/FSR_LLD_ONDShared.o LLD/OND/FSR_LLD_OneNAND.o
-fsr-objs       += LLD/OND_MSM7k/FSR_LLD_SWEcc.o LLD/OND_MSM7k/FSR_LLD_ONDShared.o LLD/OND_MSM7k/FSR_LLD_OneNAND.o
-#fsr-objs       += LLD/OND/FSR_LLD_4K_ONDShared.o LLD/OND/FSR_LLD_4K_OneNAND.o
+
+## FlexOND
+#fsr-objs	+= LLD/FlexOND/FSR_LLD_FNDShared.o LLD/FlexOND/FSR_LLD_FlexOND.o
+
+## FlexOND (MSM7k)
+#fsr-objs	+= LLD/FlexOND_MSM7k/FSR_LLD_FNDShared.o LLD/FlexOND_MSM7k/FSR_LLD_FlexOND.o
+
+## OneNAND
+#fsr-objs	+= LLD/OND/FSR_LLD_SWEcc.o LLD/OND/FSR_LLD_ONDShared.o LLD/OND/FSR_LLD_OneNAND.o
+
+## OneNAND (MSM7k)
+#fsr-objs	+= LLD/OND_MSM7k/FSR_LLD_SWEcc.o LLD/OND_MSM7k/FSR_LLD_ONDShared.o LLD/OND_MSM7k/FSR_LLD_OneNAND.o
+
+## 4K OneNAND
+#fsr-objs	+= LLD/OND/FSR_LLD_SWEcc.o LLD/OND/FSR_LLD_4K_ONDShared.o LLD/OND/FSR_LLD_4K_OneNAND.o
+
+## 4K OneNAND (MSM7k)
+fsr-objs	+= LLD/OND_MSM7k/FSR_LLD_SWEcc.o LLD/OND_MSM7k/FSR_LLD_4K_ONDShared.o LLD/OND_MSM7k/FSR_LLD_4K_OneNAND.o
 
 # Please add your platform here
 ifeq ($(CONFIG_MACH_OMAP_POSEIDON),y)
