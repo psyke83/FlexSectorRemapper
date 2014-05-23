@@ -43,7 +43,7 @@
 /* Definitions of PAM                                                        */
 /*****************************************************************************/
 
-#define     FlexOneNAND_SYSCONFIG_VAL  (0xC0F0)
+#define     FlexOneNAND_SYSCONFIG_VAL  (0xC0E2)
 #define     ASYNC_READ_MASK    ((FlexOneNAND_SYSCONFIG_VAL & 0x8000) ? 0 : 0x10)
 #define     ASYNC_WRITE_MASK   ((FlexOneNAND_SYSCONFIG_VAL & 0x2)    ? 0 : 0x30)
 
