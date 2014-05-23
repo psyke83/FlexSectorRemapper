@@ -4,8 +4,8 @@
 #   Copyright(c) 2004-2006, Samsung Electronics, Co., Ltd.
 #
 
-EXTRA_CFLAGS	+= -I$(TOPDIR)/drivers/fsr/Inc \
-		   -I$(TOPDIR)/drivers/fsr
+EXTRA_CFLAGS	+= -I$(srctree)/drivers/fsr/Inc \
+		   -I$(srctree)/drivers/fsr
 
 # For FSR 1.5 RC5 and below version
 EXTRA_CFLAGS	+= -DFSR_DUP_BUFFER

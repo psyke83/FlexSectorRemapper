@@ -31,6 +31,7 @@
 #include <linux/init.h>
 #include <linux/fs.h>
 #include <linux/version.h>
+#include <linux/proc_fs.h>
 #include <FSR.h>
 #include <FSR_OAM.h>
 
@@ -111,7 +112,11 @@ static int _fsr_dup_write(u32 volume, u32 part_id, unsigned long sector,
  * @return		0 on success, ErrorNo on failure 
  * @remark		You can find ErrorNo on driver/fsr/Inc/STL.h
  */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+static int stl_transfer(u32 volume, u32 partno, const struct request *req, u32 data_len)
+#else
 static int stl_transfer(u32 volume, u32 partno, const struct request *req)
+#endif
 {
 	unsigned long sector, nsect;
 	char *buf;
@@ -120,8 +125,13 @@ static int stl_transfer(u32 volume, u32 partno, const struct request *req)
 
 	DEBUG(DL3,"STL[I]: volume(%d), partno(%d)\n", volume, partno);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+	sector = blk_rq_pos(req);
+	nsect = data_len >> 9;
+#else
 	sector = req->sector;
 	nsect = req->current_nr_sectors;
+#endif
 	buf = req->buffer;
 
 	if (!blk_fs_request(req))
@@ -193,6 +203,10 @@ static void stl_request(struct request_queue *rq)
 	int ret;
 #endif
 	int trans_ret;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+	int error = 0;
+	u32 len = 0;
+#endif
 
 	DEBUG(DL3,"STL[I]\n");
 
@@ -200,7 +214,11 @@ static void stl_request(struct request_queue *rq)
 	if (dev->req)
 		return;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+	while ((dev->req = req = blk_peek_request(rq)) != NULL) 
+#else
 	while ((dev->req = req = elv_next_request(rq)) != NULL) 
+#endif
 	{
 		spin_unlock_irq(rq->queue_lock);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 25)
@@ -213,6 +231,20 @@ static void stl_request(struct request_queue *rq)
 		if (fsr_is_whole_dev(partno))
 			goto end_req;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+		len = blk_rq_cur_bytes(req);
+		if(blk_rq_cur_sectors(req) != blk_rq_sectors(req))
+		{
+			blk_rq_map_sg(rq, req, dev->sg);
+			len = dev->sg->length;
+			if (len > blk_rq_bytes(req))
+			{
+				len = blk_rq_bytes(req);
+			}
+		}
+		trans_ret = stl_transfer(volume, partno, req, len);
+
+#else
 		if(req->current_nr_sectors != req->nr_sectors) 
 		{
 			blk_rq_map_sg(rq, req, dev->sg);
@@ -222,11 +254,24 @@ static void stl_request(struct request_queue *rq)
 				req->current_nr_sectors = req->nr_sectors;
 			}
 		}
-			
 		trans_ret = stl_transfer(volume, partno, req);
+#endif
 end_req:
 		spin_lock_irq(rq->queue_lock); 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+		if (trans_ret)
+		{
+			error = 0;
+		} else
+		{
+			error = -EIO;
+		}
+		/* don't need to check if request is finished */
+		if (blk_rq_sectors(req) <= (len >> 9))
+			list_del_init(&req->queuelist);
+		__blk_end_request(req, error, len);
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
 		req->hard_cur_sectors = req->current_nr_sectors;
 		end_request(req, trans_ret);
 #else
@@ -241,7 +286,7 @@ end_req:
 			end_that_request_last(req);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 16) */
 		}
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31) */
 	}
 
 	DEBUG(DL3,"STL[O]\n");
@@ -311,7 +356,15 @@ static int stl_add_disk(u32 volume, u32 partno)
 	dev->req = NULL;
 
 	/* alloc scatterlist */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
+	dev->sg = kmalloc(sizeof(struct scatterlist) * dev->queue->limits.max_segments, GFP_KERNEL);
+#else
+	dev->sg = kmalloc(sizeof(struct scatterlist) * dev->queue->limits.max_phys_segments, GFP_KERNEL);
+#endif
+#else
 	dev->sg = kmalloc(sizeof(struct scatterlist) * dev->queue->max_phys_segments, GFP_KERNEL);
+#endif
 	if(!dev->sg) 
 	{
 		kfree(dev);
@@ -319,7 +372,15 @@ static int stl_add_disk(u32 volume, u32 partno)
 		return -ENOMEM;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
+	memset(dev->sg, 0, sizeof(struct scatterlist) * dev->queue->limits.max_segments);
+#else
+	memset(dev->sg, 0, sizeof(struct scatterlist) * dev->queue->limits.max_phys_segments);
+#endif
+#else
 	memset(dev->sg, 0, sizeof(struct scatterlist) * dev->queue->max_phys_segments);
+#endif
 	/* Each GBBM2 partition is a physical disk which has one partition */
 	dev->gd = alloc_disk(1);
 	/* memory error */

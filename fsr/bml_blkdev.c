@@ -30,6 +30,7 @@
 #include <linux/init.h>
 #include <linux/fs.h>
 #include <linux/version.h>
+#include <linux/proc_fs.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 15)
 #include <linux/platform_device.h>
 #else
@@ -67,7 +68,11 @@ extern int (*bml_module_resume)(struct device *dev, u32 level);
  *
  * It will erase a block before it do write the data
  */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+static int bml_transfer(u32 volume, u32 partno, const struct request *req, u32 data_len)
+#else
 static int bml_transfer(u32 volume, u32 partno, const struct request *req)
+#endif
 {
 	unsigned long sector, nsect;
 	char *buf;
@@ -85,8 +90,13 @@ static int bml_transfer(u32 volume, u32 partno, const struct request *req)
 		return 0;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+	sector = blk_rq_pos(req);
+	nsect = data_len >> 9;
+#else
 	sector = req->sector;
 	nsect = req->current_nr_sectors;
+#endif
 	buf = req->buffer;
 
 	vs = fsr_get_vol_spec(volume);
@@ -230,6 +240,10 @@ static void bml_request(struct request_queue *rq)
 	int ret;
 #endif
 	int trans_ret;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+	int error = 0;
+	u32 len = 0;
+#endif
 
 	FSRVolSpec *vs;
 
@@ -239,7 +253,11 @@ static void bml_request(struct request_queue *rq)
 	if (dev->req)
 		return;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+	while ((dev->req = req = blk_peek_request(rq)) != NULL) 
+#else
 	while ((dev->req = req = elv_next_request(rq)) != NULL) 
+#endif
 	{
 		spin_unlock_irq(rq->queue_lock);
 		
@@ -249,6 +267,24 @@ static void bml_request(struct request_queue *rq)
 		vs = fsr_get_vol_spec(volume);
 		spp_mask = vs->nSctsPerPg - 1;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+		len = blk_rq_cur_bytes(req);
+		if ((rq_data_dir(req) == READ) && !( blk_rq_pos(req) & spp_mask) &&
+			( blk_rq_cur_sectors(req) != blk_rq_sectors(req)))
+		{
+			blk_rq_map_sg(rq, req, dev->sg);
+			if (!((dev->sg->length >> SECTOR_BITS) & 0x7))
+			{
+				len = dev->sg->length;
+			}
+			if (len > blk_rq_bytes(req))
+			{
+				len = blk_rq_bytes(req);
+			}
+
+		}
+		trans_ret = bml_transfer(volume, partno, req, len);
+#else
 		if ((rq_data_dir(req) == READ) && !(req->sector & spp_mask) &&
 			(req->current_nr_sectors != req->nr_sectors))
 		{
@@ -262,12 +298,25 @@ static void bml_request(struct request_queue *rq)
 				req->current_nr_sectors = req->nr_sectors;
 			}
 		}
-		
 		trans_ret = bml_transfer(volume, partno, req);
+#endif		
 		
 		spin_lock_irq(rq->queue_lock);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31) 
+		if (trans_ret)
+		{
+			error = 0;
+		} else
+		{
+			error = -EIO;
+		}
+		/* don't need to check if request is finished */
+		if (blk_rq_sectors(req) <= (len >> 9))
+			list_del_init(&req->queuelist);
+		__blk_end_request(req, error, len);
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
 		req->hard_cur_sectors = req->current_nr_sectors;
 		end_request(req, trans_ret);
 #else
@@ -282,7 +331,7 @@ static void bml_request(struct request_queue *rq)
 			end_that_request_last(req);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 16) */
 		}
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25) */
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31) */
 	}
 
 	DEBUG(DL3,"BML[O]\n");
@@ -324,7 +373,15 @@ static int bml_add_disk(u32 volume, u32 partno)
 	dev->req = NULL;
 
 	/* alloc scatterlist */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
+	dev->sg = kmalloc(sizeof(struct scatterlist) * dev->queue->limits.max_segments, GFP_KERNEL);
+#else
+	dev->sg = kmalloc(sizeof(struct scatterlist) * dev->queue->limits.max_phys_segments, GFP_KERNEL);
+#endif
+#else
 	dev->sg = kmalloc(sizeof(struct scatterlist) * dev->queue->max_phys_segments, GFP_KERNEL);
+#endif	
 	if (!dev->sg) 
 	{
 		kfree(dev);
@@ -332,7 +389,15 @@ static int bml_add_disk(u32 volume, u32 partno)
 		return -ENOMEM;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 34)
+	memset(dev->sg, 0, sizeof(struct scatterlist) * dev->queue->limits.max_segments);
+#else
+	memset(dev->sg, 0, sizeof(struct scatterlist) * dev->queue->limits.max_phys_segments);
+#endif
+#else
 	memset(dev->sg, 0, sizeof(struct scatterlist) * dev->queue->max_phys_segments);
+#endif
 
 	/* Each partition is a physical disk which has one partition */
 	dev->gd = alloc_disk(1);
@@ -709,6 +774,17 @@ static int bml_resume(struct device *dev, u32 level)
 /**
  * initialize bml driver structure
  */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)
+static struct platform_driver bml_driver = {
+       .driver = {
+               .name           = DEVICE_NAME,
+               .bus            = &platform_bus_type,
+#ifdef CONFIG_PM
+               .suspend        = bml_suspend,
+               .resume         = bml_resume,
+#endif
+};
+#else
 static struct device_driver bml_driver = {
 	.name           = DEVICE_NAME,
 	.bus            = &platform_bus_type,
@@ -717,6 +793,7 @@ static struct device_driver bml_driver = {
 	.resume         = bml_resume,
 #endif
 };
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30) */
 
 /**
  * initialize bml device structure
@@ -749,8 +826,11 @@ int __init bml_blkdev_init(void)
 	}
 
 #ifdef CONFIG_RFS_FSR
-	if (driver_register(&bml_driver)) 
-	{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)
+        if (driver_register(&bml_driver.driver)) {
+#else
+        if (driver_register(&bml_driver)) {
+#endif
 		bml_blkdev_free();
 		unregister_blkdev(MAJOR_NR, DEVICE_NAME);
 		ERRPRINTK("BML: Can't register driver(major:%d)\n", MAJOR_NR);
@@ -758,8 +838,12 @@ int __init bml_blkdev_init(void)
 	}
 
 	if (platform_device_register(&bml_device)) 
-	{
+ 	{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)
+                driver_unregister(&bml_driver.driver);
+#else
 		driver_unregister(&bml_driver);
+#endif
 		bml_blkdev_free();
 		unregister_blkdev(MAJOR_NR, DEVICE_NAME);
 		ERRPRINTK("BML: Can't register platform device(major:%d)\n", MAJOR_NR);
@@ -804,7 +888,11 @@ void __exit bml_blkdev_exit(void)
 
 #ifdef CONFIG_RFS_FSR
 	platform_device_unregister(&bml_device);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)
+        driver_unregister(&bml_driver.driver);
+#else
 	driver_unregister(&bml_driver);
+#endif
 #endif /* CONFIG_RFS_FSR */
 
 	bml_blkdev_free();
